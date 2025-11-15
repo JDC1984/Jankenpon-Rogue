@@ -43,8 +43,6 @@ As a solo developer, all planning, coding, and testing will be managed by myself
 
 GitHub for version control and milestone tracking
 
-Agile mini-sprints (weekly self-set goals, iterative improvements)
-
 External feedback from peers/instructor to guide polish and scope, as time permits
 
 6. Risks and Limitations
