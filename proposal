@@ -1,0 +1,66 @@
+1. The Big Idea
+I propose to develop a Rock–Paper–Scissors Roguelike Pomodoro Game that turns time management into a strategic adventure. The game merges Pomodoro work sessions (timed rounds) with roguelike progression, where each “battle” is resolved by rock–paper–scissors mechanics. Upgrades and items provide variety, with a shop after each round to boost replayability. The MVP will cover the core gameplay loop, while optional goals might connect to academic task tracking.
+
+2. Learning Objectives
+Personal Learning Goals:
+
+Implement a complete Python roguelike game using PyGame or tcod for turn-based and real-time play
+
+Design a compelling game loop that motivates productivity with Pomodoro mechanics
+
+Build and balance item systems for synergy and player choices
+
+Practice agile solo development: iterating on feedback, planning, and feature prioritization
+
+Optionally: Explore API integration (Canvas tasks) if time permits
+
+3. Implementation Plan
+Language/Framework: Python (PyGame or tcod for graphics & UI)
+
+Core Steps:
+
+Program Pomodoro timer and round management
+
+Code RPS battle mechanics and progress system
+
+Develop item/shop logic with basic effects and synergies
+
+Build minimal UI and add iterative polish
+
+(Optional) Research and prototype Canvas assignment integration
+
+4. Project Schedule
+Week 1: Game architecture, Pomodoro mechanics, basic UI
+
+Week 2: RPS battles and player progression
+
+Week 3: Item/shop system, playtesting, balance tweaks
+
+Week 4: Polish, optional features, final testing & documentation
+
+5. Collaboration Plan
+As a solo developer, all planning, coding, and testing will be managed by myself. I’ll use:
+
+GitHub for version control and milestone tracking
+
+Agile mini-sprints (weekly self-set goals, iterative improvements)
+
+External feedback from peers/instructor to guide polish and scope, as time permits
+
+6. Risks and Limitations
+Balancing feature ambition with available time (scope creep)
+
+Technical learning curve (UI library, API integration)
+
+Maintaining motivation and realistic scheduling solo
+
+Mitigation: Focus on MVP first; stretch only if ahead of schedule; seek feedback and review progress weekly
+
+7. Additional Course Content
+Python game architecture & state management
+
+UI/graphics libraries (PyGame/tcod)
+
+API authentication and integration (for stretch Canvas feature)
+
+Data persistence for saving progress
