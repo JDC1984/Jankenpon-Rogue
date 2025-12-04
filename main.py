@@ -1,6 +1,7 @@
 import sys
 import time
 import random
+import math
 
 import pygame
 try:
@@ -20,10 +21,16 @@ WIN_H = 720
 FPS = 60
 
 # Y positions chosen to avoid overlap
-HUD_Y = 18
-INV_Y = WIN_H - 130        # inventory band near bottom
-LOG_X = WIN_W - 420
-LOG_Y = 20
+PADDING = 16
+HUD_Y = 20
+HUD_LINE = 26
+LOG_X = int(WIN_W * 0.7)
+LOG_Y = HUD_Y
+MENU_CENTER_Y = int(WIN_H * 0.38)
+BUTTON_ROW_Y = MENU_CENTER_Y + 80
+INVENTORY_Y = int(WIN_H * 0.78)
+INV_Y = INVENTORY_Y  # legacy name used in draw_inventory_bar
+CONTROLS_Y = WIN_H - PADDING * 2
 MENU_ITEMS_Y = 340
 SHOP_ITEMS_Y = 360
 CONTROLS_Y = WIN_H - 26
@@ -40,6 +47,9 @@ PANEL_DARK = (30, 35, 55)
 BUTTON = (70, 80, 110)
 BUTTON_HOVER = (90, 110, 150)
 BUTTON_SELECT = (130, 160, 210)
+# Subtle samurai-inspired trims (warm lacquer + gold outline)
+PANEL_TRIM = (90, 70, 50)
+PANEL_OUTLINE = (200, 170, 90)
 
 # ---------- Game tuning ----------
 BASE_WORK_SECONDS = 30          # demo work session
@@ -75,6 +85,8 @@ SELL_DISCOUNT = 0.6
 # Base score gain per win/tie
 BASE_SCORE_WIN = 5
 BASE_SCORE_TIE = 1
+# Endless exponential multiplier base per completed set
+ENDLESS_MULT_BASE = 1.35
 
 # ---------- Fonts ----------
 pygame.init()
@@ -103,15 +115,12 @@ def load_item_sprites():
                 sprites.append(sheet.subsurface(rect))
         return sprites
     except Exception:
-        # Build simple colored placeholder tiles with numbers
+        # Build simple solid-color placeholder tiles (no numbers)
         sprites = []
         colors = [(90, 70, 140), (140, 110, 110), (170, 150, 90), (110, 160, 120)]
         for i in range(SHEET_ROWS * SHEET_COLS):
             surf = pygame.Surface((TILE_W, TILE_H))
             surf.fill(colors[i % len(colors)])
-            txt = SMALL_FONT.render(str(i), True, (0, 0, 0))
-            txt_rect = txt.get_rect(center=(TILE_W // 2, TILE_H // 2))
-            surf.blit(txt, txt_rect)
             sprites.append(surf)
         return sprites
 
@@ -148,6 +157,12 @@ def draw_button(screen, rect, text, font, hover, selected):
     txt = font.render(text, True, TEXT)
     txt_rect = txt.get_rect(center=rect.center)
     screen.blit(txt, txt_rect)
+
+
+def draw_panel(screen, rect, fill_color, border_color, radius=8, border_width=2):
+    """Draw a softly rounded panel with a gold-ish outline."""
+    pygame.draw.rect(screen, fill_color, rect, border_radius=radius)
+    pygame.draw.rect(screen, border_color, rect, width=border_width, border_radius=radius)
 
 
 def make_item_placeholder(color):
@@ -208,7 +223,7 @@ def can_buy(player, item):
 
 def apply_purchase(player, item):
     """Subtract gold and add item to proper lists. Handles replacement when flagged."""
-    player["gold"] -= item["cost"]
+    player["gold"] = max(0, player["gold"] - item["cost"])
     player["owned"].append(item["id"])
     if item["type"] == "ring":
         player["rings"].append(item["id"])
@@ -228,10 +243,8 @@ def start_work_session(game_state, timer):
         reward_blocks = max(1, int((base + settings["extra_minutes"] * 30) / 30))
         bonus = 1.0 + settings["extra_minutes"] * EXTRA_MINUTE_BONUS
         gold_gain = int(GOLD_PER_WORK_BLOCK * reward_blocks * bonus)
-        score_gain = int(SCORE_PER_WORK_BLOCK * reward_blocks * bonus)
         player = game_state["player"]
         player["gold"] += gold_gain
-        player["score"] += score_gain
         settings["reward_multiplier"] = bonus
         game_state["phase"] = "menu"
         return
@@ -251,7 +264,7 @@ def finish_work(game_state):
     reward_blocks = max(1, int((base + settings["extra_minutes"] * 30) / 30))
     bonus = settings["reward_multiplier"]
     gold_gain = int(GOLD_PER_WORK_BLOCK * reward_blocks * bonus)
-    player["gold"] += gold_gain
+    player["gold"] = max(0, player["gold"] + gold_gain)
     # Reset extra minutes for next session
     settings["extra_minutes"] = 0
     settings["reward_multiplier"] = 1.0
@@ -287,29 +300,40 @@ def draw_hud(screen, game_state):
     work = game_state["work_settings"]
     need_work = (not game_state["develop_mode"] and rps["rounds_since_work"] >= RPS_WORK_GATE)
     phase_text = "Phase: " + phase
-    rps_line = f"RPS: {rps['rounds_played']}/\u221e"
+    # Show finite target (9) until endless unlocks; then show infinity.
+    rps_cap = "\u221e" if game_state.get("endless") else "9"
+    rps_line = f"RPS: {rps['rounds_played']}/{rps_cap}"
     line1 = f"{phase_text}   Round {r}/8   Heat {h}/3"
     line2 = f"{rps_line}  Trio: {rps['rounds_since_shop']}/{RPS_ROUNDS_PER_SET}  Gold: {player['gold']}  Score: {player['score']}  Work: {BASE_WORK_SECONDS}s + {work['extra_minutes']}m"
-    draw_text(screen, "Jankenpon-Rogue", TITLE_FONT, TEXT, 20, HUD_Y)
-    draw_text(screen, line1, HUD_FONT, TEXT, 20, HUD_Y + 38)
-    draw_text(screen, line2, HUD_FONT, TEXT, 20, HUD_Y + 62)
+    line3 = f"Multiplier: x{work['reward_multiplier']:.2f}"
+    req = required_score(game_state["round"], game_state["heat"])
+    line4 = f"Required score this heat: {req} (you: {player['score']})"
+    # Decorative panel behind the HUD for readability
+    hud_rect = pygame.Rect(PADDING - 8, HUD_Y - 8, int(WIN_W * 0.6), (HUD_LINE + 6) * 5 + 8)
+    draw_panel(screen, hud_rect, PANEL, PANEL_OUTLINE, radius=10, border_width=2)
+
+    draw_text(screen, "Jankenpon-Rogue", TITLE_FONT, TEXT, PADDING, HUD_Y)
+    draw_text(screen, line1, HUD_FONT, TEXT, PADDING, HUD_Y + HUD_LINE + 4)
+    draw_text(screen, line2, HUD_FONT, TEXT, PADDING, HUD_Y + (HUD_LINE + 4) * 2)
+    draw_text(screen, line3, HUD_FONT, TEXT, PADDING, HUD_Y + (HUD_LINE + 4) * 3)
+    draw_text(screen, line4, HUD_FONT, ACCENT, PADDING, HUD_Y + (HUD_LINE + 4) * 4)
     if need_work:
-        draw_text(screen, "Work required before more battles.", HUD_FONT, BAD, 20, HUD_Y + 86)
+        draw_text(screen, "Work required before more battles.", HUD_FONT, BAD, PADDING, HUD_Y + (HUD_LINE + 4) * 5)
 
 
 def draw_inventory_bar(screen, game_state, item_sprites, inv_rects=None):
-    """Draw inventory slots with sprites or empty boxes.
-
-    inv_rects: optional list that will be filled with {"item_id":..., "rect":...}
-               for hover tooltips. Empty slots still get a rect with item_id=None.
-    """
+    """Draw a single horizontal band: Rings | Stationary | Sodas."""
     x = 20
     y = INV_Y
-    draw_text(screen, "Rings", HUD_FONT, SUBTEXT, x, y - 24)
-    draw_text(screen, "Stationary", HUD_FONT, SUBTEXT, x + 260, y - 24)
-    draw_text(screen, "Sodas", HUD_FONT, SUBTEXT, x + 560, y - 24)
+    gap_x = 90
+    group_gap = 40
 
-    def draw_slots(start_x, slots, owned_ids):
+    # Decorative band behind the inventory rows
+    band_rect = pygame.Rect(PADDING - 8, y - 36, WIN_W - 2 * PADDING + 16, 130)
+    draw_panel(screen, band_rect, PANEL_DARK, PANEL_OUTLINE, radius=8, border_width=2)
+
+    def draw_group(label, start_x, slots, owned_ids):
+        draw_text(screen, label, HUD_FONT, SUBTEXT, start_x, y - 20)
         cx = start_x
         for i in range(slots):
             rect = pygame.Rect(cx, y, 80, 80)
@@ -326,29 +350,43 @@ def draw_inventory_bar(screen, game_state, item_sprites, inv_rects=None):
                 draw_text(screen, "empty", TINY_FONT, SUBTEXT, cx + 10, y + 30)
                 if inv_rects is not None:
                     inv_rects.append({"item_id": None, "rect": rect})
-            cx += 100
+            cx += gap_x
+        return cx
 
     player = game_state["player"]
-    draw_slots(x, INV_SLOTS["rings"], player["rings"])
-    draw_slots(x + 260, INV_SLOTS["stationary"], player["stationary"])
-    draw_slots(x + 560, INV_SLOTS["sodas"], player["sodas"])
+    cx = draw_group("Rings", x, INV_SLOTS["rings"], player["rings"])
+    cx += group_gap
+    cx = draw_group("Stationary", cx, INV_SLOTS["stationary"], player["stationary"])
+    cx += group_gap
+    draw_group("Sodas", cx, INV_SLOTS["sodas"], player["sodas"])
 
 
 def draw_log(screen, game_state):
-    """Draw the RPS log on the right side; only last 5 to avoid overlap."""
+    """Draw the RPS log on the right side with its own column/panel."""
     log = game_state["rps"]["log"][-5:]
-    draw_text(screen, "RPS Log (last 5):", HUD_FONT, SUBTEXT, LOG_X, LOG_Y)
-    y = LOG_Y + 26
+    panel_width = WIN_W - LOG_X - PADDING
+    panel_height = 300  # taller to avoid overflow
+    panel_rect = pygame.Rect(LOG_X - 6, LOG_Y - 6, panel_width, panel_height)
+    draw_panel(screen, panel_rect, (25, 25, 45, 180), PANEL_OUTLINE, radius=10, border_width=2)
+    draw_text(screen, "RPS Log (last 5):", HUD_FONT, SUBTEXT, LOG_X + PADDING, LOG_Y + 4)
+    y = LOG_Y + 4 + HUD_LINE + 4
     for entry in log:
         si = entry.get("score_info", {})
         total = si.get("total", 0)
-        line = f"#{entry['round_number']} vs Opp{entry['opponent_id']} (R{entry['round_idx']+1} H{entry['heat']+1}): {entry['result']} (+{entry['gold_gained']}g, +{total}s)"
-        draw_text(screen, line, TINY_FONT, TEXT, LOG_X, y)
+        # keep lines short to avoid overflow
+        line1 = f"#{entry['round_number']} vs Opp{entry['opponent_id']} (R{entry['round_idx']+1}/H{entry['heat']+1})"
+        line2 = f"{entry['result']} (+{entry['gold_gained']}g, +{total}s)"
+        draw_text(screen, line1, TINY_FONT, TEXT, LOG_X + PADDING, y)
+        y += 16
+        draw_text(screen, line2, TINY_FONT, TEXT, LOG_X + PADDING + 12, y)
         y += 18
 
 
-def draw_items_row(screen, item_ids, item_sprites, y):
-    """Draw a centered row of item cards with name and cost."""
+def draw_items_row(screen, item_ids, item_sprites, y, hover_id=None):
+    """Draw a centered row of item cards with name and cost.
+
+    hover_id: if provided, the matching item is drawn slightly larger for emphasis.
+    """
     if not item_ids:
         return []
     count = len(item_ids)
@@ -359,13 +397,21 @@ def draw_items_row(screen, item_ids, item_sprites, y):
     for item_id in item_ids:
         item = ITEMS[item_id]
         sprite = item_sprites[item["sprite_index"]]
-        screen.blit(sprite, (x, y))
+        scale = 1.15 if hover_id == item_id else 1.0
+        sw = int(TILE_W * scale)
+        sh = int(TILE_H * scale)
+        sprite_draw = pygame.transform.scale(sprite, (sw, sh)) if scale != 1.0 else sprite
+        # center the sprite on the original slot position
+        screen.blit(sprite_draw, (x + (TILE_W - sw) // 2, y + (TILE_H - sh) // 2))
         card_width = TILE_W + 180
         name_rect = pygame.Rect(x - 10, y + TILE_H + 6, card_width, 32)
-        pygame.draw.rect(screen, PANEL, name_rect)
-        draw_text(screen, item["name"], SMALL_FONT, TEXT, name_rect.x + 8, name_rect.y + 6)
+        pygame.draw.rect(screen, PANEL, name_rect, border_radius=6)
+        pygame.draw.rect(screen, PANEL_OUTLINE, name_rect, width=1, border_radius=6)
+        clean_name = "".join([c for c in item["name"] if not c.isdigit()]).strip()
+        draw_text(screen, clean_name, SMALL_FONT, TEXT, name_rect.x + 8, name_rect.y + 6)
         cost_rect = pygame.Rect(x - 10, y + TILE_H + 40, card_width, 24)
-        pygame.draw.rect(screen, PANEL_DARK, cost_rect)
+        pygame.draw.rect(screen, PANEL_DARK, cost_rect, border_radius=6)
+        pygame.draw.rect(screen, PANEL_OUTLINE, cost_rect, width=1, border_radius=6)
         draw_text(screen, f"{item['cost']}g | {item['type'].title()}", SMALL_FONT, ACCENT, cost_rect.x + 8, cost_rect.y + 2)
         rects.append({"item_id": item_id, "rect": pygame.Rect(x, y, TILE_W + 40, TILE_H)})
         x += TILE_W + 200
@@ -376,16 +422,23 @@ def draw_tooltip(screen, text, pos):
     """Draw a small tooltip near the cursor."""
     surf = SMALL_FONT.render(text, True, TEXT)
     padding = 6
-    box = pygame.Rect(pos[0] + 16, pos[1] + 16, surf.get_width() + padding * 2, surf.get_height() + padding * 2)
+    box_w = surf.get_width() + padding * 2
+    box_h = surf.get_height() + padding * 2
+    x = pos[0] + 16
+    y = pos[1] + 16
+    x = max(PADDING, min(x, WIN_W - box_w - PADDING))
+    y = max(PADDING, min(y, WIN_H - box_h - PADDING))
+    box = pygame.Rect(x, y, box_w, box_h)
     pygame.draw.rect(screen, PANEL, box)
     screen.blit(surf, (box.x + padding, box.y + padding))
 
 
 def draw_controls(screen, line1, line2=None):
     """Draw controls text at bottom."""
-    draw_text(screen, line1, HUD_FONT, SUBTEXT, 20, CONTROLS_Y)
+    y = CONTROLS_Y
+    draw_text(screen, line1, HUD_FONT, SUBTEXT, PADDING, y)
     if line2:
-        draw_text(screen, line2, HUD_FONT, SUBTEXT, 20, CONTROLS_Y - 28)
+        draw_text(screen, line2, HUD_FONT, SUBTEXT, PADDING, y + HUD_LINE)
 
 
 def draw_game_over(screen, game_state):
@@ -403,12 +456,22 @@ def draw_main_menu(screen, game_state):
     title_rect = draw_text(screen, "Jankenpon-Rogue", TITLE_FONT, TEXT, 80, 140)
     start_y = title_rect.bottom + 40
     x = 120
+    # Decorative panel behind options
+    panel_h = len(options) * 60 + 80
+    opt_panel = pygame.Rect(x - 20, start_y - 20, 400, panel_h)
+    draw_panel(screen, opt_panel, PANEL_DARK, PANEL_OUTLINE, radius=10, border_width=2)
     for idx, opt in enumerate(options):
-        rect = pygame.Rect(x, start_y + idx * 60, 300, 48)
+        rect = pygame.Rect(x, start_y + idx * 60, 340, 48)
         hover = rect.collidepoint(pygame.mouse.get_pos())
         draw_button(screen, rect, opt, HUD_FONT, hover, sel == idx)
-    hint = "Up/Down to move, Enter/Space to select, ESC to quit."
-    draw_text(screen, hint, SMALL_FONT, SUBTEXT, 80, start_y + len(options) * 60 + 20)
+    # Split hint into two shorter lines centered under the panel to avoid overflow
+    hint1 = "Up/Down: move   Enter/Space: select"
+    hint2 = "ESC: quit"
+    # Position hints inside the panel near the bottom to avoid overflow
+    hint_x = opt_panel.x + 12
+    hint_y = opt_panel.bottom - 60
+    draw_text(screen, hint1, SMALL_FONT, SUBTEXT, hint_x, hint_y)
+    draw_text(screen, hint2, SMALL_FONT, SUBTEXT, hint_x, hint_y + HUD_LINE)
     if game_state["ui"].get("menu_confirm_quit"):
         draw_text(screen, "Confirm quit? Y/N", HUD_FONT, BAD, 80, start_y + len(options) * 60 + 50)
     if game_state.get("menu_message"):
@@ -507,20 +570,26 @@ def draw_menu_phase(screen, game_state, item_sprites, item_rects, hover_id):
     draw_log(screen, game_state)
     base = game_state["work_settings"].get("base_seconds", BASE_WORK_SECONDS)
     mode_label = "Pomodoro" if base > BASE_WORK_SECONDS else "Free/Demo"
-    prompt = "SPACE: start work (base {}s, mode {})   UP/DOWN: +/-1 min (adds 30s chunks)   Multiplier: x{:.2f}   B: R/P/S battle".format(base, mode_label, game_state["work_settings"]["reward_multiplier"])
-    draw_text(screen, prompt, HUD_FONT, TEXT, 20, 200)
-    if game_state.get("menu_message"):
-        draw_text(screen, game_state["menu_message"], HUD_FONT, BAD, 20, 230)
-    # Required score display
-    req = required_score(game_state["round"], game_state["heat"])
-    draw_text(screen, f"Required score this heat: {req} (you: {game_state['player']['score']})", HUD_FONT, SUBTEXT, 20, 260)
+    center_panel_y = MENU_CENTER_Y
+    prompt1 = "SPACE: start work (base {}s, mode {})".format(base, mode_label)
+    prompt2 = "UP/DOWN: adjust work time (30s chunks)   B: start R/P/S battle"
+    # panel background
+    panel_width = WIN_W - PADDING * 2
+    panel_height = 150
+    menu_panel = pygame.Rect(PADDING, center_panel_y - 60, panel_width, panel_height)
+    draw_panel(screen, menu_panel, (30, 35, 55, 120), PANEL_OUTLINE, radius=10, border_width=2)
 
-    # Action buttons (work / battle / quit)
+    draw_text(screen, prompt1, HUD_FONT, TEXT, PADDING + 20, center_panel_y - 30)
+    draw_text(screen, prompt2, HUD_FONT, TEXT, PADDING + 20, center_panel_y)
+    if game_state.get("menu_message"):
+        draw_text(screen, game_state["menu_message"], HUD_FONT, BAD, PADDING + 20, center_panel_y + 30)
+
+    # Action buttons (work / battle / mode)
     btns = []
-    labels = [("Start Work", "work"), ("Start Battle", "battle"), ("Toggle Mode", "mode"), ("Quit", "quit")]
+    labels = [("Start Work", "work"), ("Start Battle", "battle"), ("Toggle Mode", "mode")]
     total_w = len(labels) * 200 + (len(labels) - 1) * 30
     start_x = (WIN_W - total_w) // 2
-    y_btn = 300
+    y_btn = center_panel_y + 70
     for i, (text_label, action) in enumerate(labels):
         rect = pygame.Rect(start_x + i * 230, y_btn, 200, 44)
         hover = rect.collidepoint(pygame.mouse.get_pos())
@@ -537,13 +606,17 @@ def draw_menu_phase(screen, game_state, item_sprites, item_rects, hover_id):
     for rec in item_rects:
         if rec["item_id"] and rec["rect"].collidepoint(mouse_pos):
             draw_tooltip(screen, ITEMS[rec["item_id"]]["description"], clamp_tooltip_pos(mouse_pos))
-    draw_controls(screen, "Controls: SPACE start work | UP/DOWN adjust | B battle | ESC pause")
+    # Controls at bottom
+    draw_controls(screen, "Controls: SPACE start work | UP/DOWN adjust work | B battle | ESC pause",
+                  "R/P/S pick moves | 1/2/3 buy in shop | Y/N confirm")
 
 
-def draw_battle(screen, game_state):
+def draw_battle(screen, game_state, item_sprites):
     """Draw battle UI with choices and latest result."""
     draw_hud(screen, game_state)
     draw_log(screen, game_state)
+    inv_rects = []
+    draw_inventory_bar(screen, game_state, item_sprites, inv_rects)
     y = 240
     draw_text(screen, "Battle: press R / P / S or click a button. 3 rounds -> shop.", HUD_FONT, TEXT, 20, y)
     bs = game_state["battle_state"]
@@ -575,6 +648,8 @@ def draw_battle(screen, game_state):
 
 def draw_shop(screen, game_state, item_sprites, item_rects, hover_box):
     """Draw shop offers and status."""
+    # Always reset confirm button rects each frame
+    game_state["shop"]["confirm_rects"] = {}
     draw_hud(screen, game_state)
     inv_rects = []
     draw_inventory_bar(screen, game_state, item_sprites, inv_rects)
@@ -582,20 +657,34 @@ def draw_shop(screen, game_state, item_sprites, item_rects, hover_box):
     player = game_state["player"]
     shop = game_state["shop"]
     draw_text(screen, "Shop Offerings", TITLE_FONT, TEXT, (WIN_W - 240) // 2, 200)
-    draw_text(screen, f"Gold: {player['gold']}   Score: {player['score']}", HUD_FONT, TEXT, 20, 210)
     if shop["pending"]:
         item = ITEMS[shop["pending"]]
-        prompt = f"Buy {item['name'].split(' ',1)[0]} for {item['cost']}g?"
+        clean_name = "".join([c for c in item["name"] if not c.isdigit()]).strip()
+        prompt = f"Buy {clean_name} for {item['cost']}g?"
         confirm = "(Y/Enter confirm, N cancel)"
         draw_text(screen, prompt, HUD_FONT, ACCENT, 20, 268)
         draw_text(screen, confirm, HUD_FONT, ACCENT, 20, 296)
+        # Centered clickable Y/N buttons for confirmation (placed above item row)
+        btn_w = 120
+        btn_h = 44
+        gap = 24
+        total_w = btn_w * 2 + gap
+        start_x = (WIN_W - total_w) // 2
+        # Lift the buttons higher to avoid colliding with item sprites
+        y_btn = SHOP_ITEMS_Y - 90
+        y_rect = pygame.Rect(start_x, y_btn, btn_w, btn_h)
+        n_rect = pygame.Rect(start_x + btn_w + gap, y_btn, btn_w, btn_h)
+        draw_button(screen, y_rect, "Yes (Y)", HUD_FONT, y_rect.collidepoint(pygame.mouse.get_pos()), False)
+        draw_button(screen, n_rect, "No (N)", HUD_FONT, n_rect.collidepoint(pygame.mouse.get_pos()), False)
+        shop["confirm_rects"] = {"y": y_rect, "n": n_rect}
     elif shop["message"]:
         draw_text(screen, shop["message"], HUD_FONT, BAD, 20, 240)
     else:
         draw_text(screen, "Select an item with 1/2/3 or click; Enter to leave.", HUD_FONT, SUBTEXT, 20, 240)
-    rects = draw_items_row(screen, shop["offers"], item_sprites, SHOP_ITEMS_Y)
-    item_rects[:] = rects
+        shop["confirm_rects"] = {}
     hover_id = hover_box[0] if hover_box else None
+    rects = draw_items_row(screen, shop["offers"], item_sprites, SHOP_ITEMS_Y, hover_id=hover_id)
+    item_rects[:] = rects
     if hover_id:
         pos = clamp_tooltip_pos(pygame.mouse.get_pos())
         draw_tooltip(screen, ITEMS[hover_id]["description"], pos)
@@ -663,8 +752,8 @@ def handle_main_menu_events(events, game_state, running_flag):
 
 
 def handle_pause_menu_events(events, game_state, running_flag):
-    """Handle pause menu interactions."""
-    options = ["resume", "settings", "exit"]
+    """Handle pause menu interactions (with dev mode option)."""
+    options = ["resume", "settings", "dev", "exit"]
     idx = game_state["ui"]["pause_menu_index"]
     for event in events:
         if event.type == pygame.QUIT:
@@ -689,6 +778,9 @@ def handle_pause_menu_events(events, game_state, running_flag):
                 elif choice == "settings":
                     game_state["prev_phase"] = "pause_menu"
                     game_state["phase"] = "settings"
+                elif choice == "dev":
+                    game_state["prev_phase"] = "pause_menu"
+                    game_state["phase"] = "dev_pin"
                 elif choice == "exit":
                     game_state["ui"]["confirm_exit"] = True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -771,8 +863,10 @@ def handle_game_over_events(events, game_state, running_flag):
             if event.key == pygame.K_ESCAPE:
                 running_flag[0] = False
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                # reset minimal state
+                # reset minimal state, preserve dev mode flag
+                dev_flag = game_state.get("develop_mode", False)
                 new_state = create_game_state()
+                new_state["develop_mode"] = dev_flag
                 game_state.clear()
                 game_state.update(new_state)
                 game_state["endless"] = False
@@ -874,12 +968,6 @@ def handle_menu_events(events, game_state, timer, item_rects, hover_id_box):
                         else:
                             ws["base_seconds"] = 1500
                             game_state["menu_message"] = "Mode set to Pomodoro (25 min base)."
-                    elif action == "quit":
-                        if not game_state["ui"].get("menu_confirm_quit"):
-                            game_state["ui"]["menu_confirm_quit"] = True
-                            game_state["menu_message"] = "Confirm quit? Y/N"
-                        else:
-                            return "quit"
 
 
 def handle_battle_events(events, game_state):
@@ -919,9 +1007,19 @@ def resolve_battle_round(game_state, player_move_val):
         gold_gain = RPS_REWARD_WIN
     elif result == "tie":
         gold_gain = RPS_REWARD_TIE
-    game_state["player"]["gold"] += gold_gain
+    game_state["player"]["gold"] = max(0, game_state["player"]["gold"] + gold_gain)
 
-    # track set
+    # If tie, log it but do NOT count it toward the 3-hand set; replay until win/lose.
+    if result == "tie":
+        append_log(game_state, player_move_val, enemy_val, result, gold_gain, None)
+        bs["player_move"] = player_move_val
+        bs["enemy_move"] = enemy_val
+        bs["result"] = result
+        bs["gold_gain"] = gold_gain
+        bs["message"] = "Tie: replay this hand."
+        return
+
+    # track set (only wins/losses count toward the 3-hand set)
     bs.setdefault("results", []).append(result)
     bs.setdefault("moves", []).append(player_move_val)
 
@@ -943,9 +1041,25 @@ def resolve_battle_round(game_state, player_move_val):
             "set_streak": rps_state.get("set_streak", 0),
         }
         score_info = calculate_set_score(set_summary, game_state)
-        game_state["player"]["score"] += score_info["total"]
+        # Reset score per set to enforce per-hand clear
+        game_state["player"]["score"] = 0
+        # Exponential bump in endless mode based on sets completed
+        total_sets = max(1, rps_state["rounds_played"] // RPS_ROUNDS_PER_SET)
+        total_apply = score_info["total"]
+        if game_state.get("endless"):
+            total_apply = int(total_apply * (ENDLESS_MULT_BASE ** total_sets))
+            score_info["total"] = total_apply
+        game_state["player"]["score"] += total_apply
         append_log(game_state, "-", "-", "set_total", 0, score_info)
         bs["last_set_score"] = score_info
+        # Gate immediately after the set is scored (before shop)
+        required = required_score(game_state["round"], game_state["heat"])
+        if game_state["player"]["score"] < required and not game_state.get("endless"):
+            game_state["game_over_msg"] = f"Required score {required}, you had {game_state['player']['score']}."
+            bs["results"] = []
+            bs["moves"] = []
+            game_state["phase"] = "game_over"
+            return
         # streak update (W>=2)
         if bs["results"].count("win") >= 2:
             rps_state["set_streak"] = rps_state.get("set_streak", 0) + 1
@@ -1016,18 +1130,12 @@ def handle_shop_events(events, game_state, item_rects, hover_id_box):
                     shop["pending"] = None
             else:
                 if event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    # score gate (Balatro-like)
-                    required = required_score(game_state["round"], game_state["heat"])
-                    if game_state["player"]["score"] < required and not game_state.get("endless"):
-                        game_state["game_over_msg"] = f"Required score {required}, you had {game_state['player']['score']}."
-                        game_state["phase"] = "game_over"
-                    else:
-                        # advance heat/round
-                        game_state["heat"] += 1
-                        if game_state["heat"] >= 3:
-                            game_state["heat"] = 0
-                            game_state["round"] = min(game_state["round"] + 1, 7)
-                        game_state["phase"] = "menu"
+                    # advance heat/round
+                    game_state["heat"] += 1
+                    if game_state["heat"] >= 3:
+                        game_state["heat"] = 0
+                        game_state["round"] = min(game_state["round"] + 1, 7)
+                    game_state["phase"] = "menu"
             if event.key == pygame.K_s and inv_hover:
                 itm = ITEMS[inv_hover]
                 sell_price = max(1, int(itm["cost"] * SELL_DISCOUNT))
@@ -1051,6 +1159,12 @@ def handle_shop_events(events, game_state, item_rects, hover_id_box):
             # inventory hover captured elsewhere; keep in box[1]
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mx, my = event.pos
+            # clickable confirmation buttons when pending
+            if shop["pending"] and shop.get("confirm_rects"):
+                if shop["confirm_rects"].get("y") and shop["confirm_rects"]["y"].collidepoint((mx, my)):
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_y))
+                if shop["confirm_rects"].get("n") and shop["confirm_rects"]["n"].collidepoint((mx, my)):
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_n))
             for rec in item_rects:
                 if rec["rect"].collidepoint((mx, my)):
                     shop["pending"] = rec["item_id"]
@@ -1144,13 +1258,20 @@ def main():
             menu_item_rects.clear()
             draw_menu_phase(screen, game_state, item_sprites, menu_item_rects, menu_hover_box[0])
         elif game_state["phase"] == "battle":
-            draw_battle(screen, game_state)
+            draw_battle(screen, game_state, item_sprites)
         elif game_state["phase"] == "shop":
             shop_item_rects.clear()
             draw_shop(screen, game_state, item_sprites, shop_item_rects, hover_id_box)
         elif game_state["phase"] == "work":
+            # Work screen: center timer and minimal overlap
             draw_hud(screen, game_state)
-            draw_text(screen, f"Work timer: {int(timer.remaining)}s", HUD_FONT, ACCENT, 20, 120)
+            remaining = max(0, int(timer.remaining))
+            mins = remaining // 60
+            secs = remaining % 60
+            time_str = f"{mins:02d}:{secs:02d}"
+            time_surf = TITLE_FONT.render(time_str, True, ACCENT)
+            time_rect = time_surf.get_rect(center=(WIN_W // 2, WIN_H // 2 - 40))
+            screen.blit(time_surf, time_rect)
             draw_controls(screen, "Timer running. ESC pause.")
 
         pygame.display.flip()

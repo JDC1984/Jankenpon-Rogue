@@ -30,7 +30,8 @@ def required_score(round_index, heat_index):
     round_multiplier = 1.2 ** round_index
     heat_bonus_list = [0.8, 1.0, 1.3]
     heat_bonus = heat_bonus_list[heat_index]
-    return int(base * round_multiplier * heat_bonus)
+    # Halved requirement per user request
+    return int(0.5 * base * round_multiplier * heat_bonus)
 
 
 def create_heat_info():
@@ -118,4 +119,5 @@ def create_game_state():
         "ui": create_ui_state(),
         "prev_phase": "menu",  # to return from pause/settings/help
         "game_over_msg": "",
+        "develop_mode": False,    # persistent dev flag
     }
