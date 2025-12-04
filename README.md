@@ -1,5 +1,5 @@
 # Jankenpon-Rogue
-Team: Jadyn D'Cruz  
+Team Members : Jadyn D'Cruz  
 Repository: Public (`https://github.com/jadyn-dcruz/Jankenpon-Rogue`)
 
 ## 1) Big Idea / Goal
@@ -32,6 +32,7 @@ Repository: Public (`https://github.com/jadyn-dcruz/Jankenpon-Rogue`)
   - `items.py` — registry (20 sodas, 20 rings, 20 stationary) with metadata.
   - `rps.py` — moves, enemy choice, resolve round.
   - `scoring.py` — Balatro-inspired set scoring (base/add/x-mult, synergies, streaks, sodas).
+- Architecture diagram: *(replace this placeholder with your image once captured, e.g., `diagram-flow.png`)*.
 - Flow & gating (diagram):
   ```
   Main Menu → Settings/Help/Dev PIN
@@ -75,7 +76,15 @@ Repository: Public (`https://github.com/jadyn-dcruz/Jankenpon-Rogue`)
   ![Battle with required score & log + soda halo indicator](image-9.png)  
   ![Shop with offers, confirm buttons, inventory/log](image-10.png)  
   ![Work timer (mm:ss) centered](image-8.png)
-- Fresh-clone test: **pending** — run clone + venv + install + `python main.py`; record pass/fail and environment.
+- Fresh-clone test (fill in after running):
+  - Date/OS/Python:
+  - Steps: clone → venv → install → `python main.py`
+  - Result: pass/fail, notes:
+- Demo video/GIF: **pending** — capture a short loop once visuals are final.
+- Docstring/style audit (manual, 13-week level):
+  - Checked `main.py` (draw_* and handle_* helpers, `resolve_battle_round`, work/start/finish, `append_log`), `timer.py`, `game_state.py`, `items.py`, `rps.py`, `scoring.py`.
+  - All functions now have brief docstrings (purpose, key params, returns/side effects). Mentioned special behaviors: tie replay, shop gating, soda arming, score halving, endless scaling, score reset on shop entry.
+  - Constants used for magic numbers; long strings wrapped where needed. Next pass: run `ruff check` or `black` if required by grading.
 - Demo video/GIF: **pending** — capture a short loop once visuals are final.
 
 ## 5) Project Evolution
@@ -93,7 +102,7 @@ Repository: Public (`https://github.com/jadyn-dcruz/Jankenpon-Rogue`)
 
 ## 6) Attribution
 - Libraries: PyGame.
-- Art: `assets/items_sheet.png` (placeholder/custom). Replace with licensed sprites for distribution; solid-color placeholders auto-generate if missing. No animation assets yet; consider simple hover/confirm pulses as future work.
+- Art: Replace with licensed sprites for distribution; solid-color placeholders auto-generate if missing. No animation assets yet; consider simple hover/confirm pulses as future work.
 - Inspirations/Research: Balatro (score/ante scaling, modular items), Slay the Spire (synergy loadouts), Hades/Dead Cells (heat/progression).
 - Tools: ChatGPT-assisted design/coding; all AI-assisted code reviewed and understood.
 - Repo: public at `https://github.com/jadyn-dcruz/Jankenpon-Rogue`.
