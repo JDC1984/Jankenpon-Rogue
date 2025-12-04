@@ -184,6 +184,15 @@ def make_item_placeholder(color):
     return surf
 
 
+def display_name(item_or_id):
+    """Return a user-facing item name without any numeric suffix."""
+    if isinstance(item_or_id, dict):
+        raw = item_or_id.get("name", "")
+    else:
+        raw = ITEMS[item_or_id]["name"]
+    return "".join([c for c in raw if not c.isdigit()]).strip()
+
+
 def ensure_battle_state(game_state):
     """Create a battle_state dict if not present."""
     if "battle_state" not in game_state:
@@ -340,7 +349,7 @@ def draw_hud(screen, game_state):
         draw_text(screen, "Work required before more battles.", HUD_FONT, BAD, PADDING, warn_y)
 
 
-def draw_inventory_bar(screen, game_state, item_sprites, inv_rects=None):
+def draw_inventory_bar(screen, game_state, item_sprites, inv_rects=None, armed_id=None):
     """Draw a single horizontal band: Rings | Stationary | Sodas."""
     x = PADDING + 12
     y = INV_Y
@@ -364,6 +373,8 @@ def draw_inventory_bar(screen, game_state, item_sprites, inv_rects=None):
                 sprite = item_sprites[item["sprite_index"]]
                 thumb = pygame.transform.scale(sprite, (SLOT_W - 14, SLOT_H - 14))
                 screen.blit(thumb, (cx + 7, y + 7))
+                if armed_id and item_id == armed_id:
+                    pygame.draw.rect(screen, TEXT, rect.inflate(6, 6), width=2, border_radius=RADIUS)
                 if inv_rects is not None:
                     inv_rects.append({"item_id": item_id, "rect": rect})
             else:
@@ -445,8 +456,7 @@ def draw_items_row(screen, item_ids, item_sprites, y, hover_id=None,
         name_rect = pygame.Rect(x - 10, y + TILE_H + 6, card_width, 32)
         pygame.draw.rect(screen, PANEL, name_rect, border_radius=6)
         pygame.draw.rect(screen, PANEL_OUTLINE, name_rect, width=1, border_radius=6)
-        clean_name = "".join([c for c in item["name"] if not c.isdigit()]).strip()
-        draw_text(screen, clean_name, SMALL_FONT, TEXT, name_rect.x + 8, name_rect.y + 6)
+        draw_text(screen, display_name(item), SMALL_FONT, TEXT, name_rect.x + 8, name_rect.y + 6)
         cost_rect = pygame.Rect(x - 10, y + TILE_H + 40, card_width, 24)
         pygame.draw.rect(screen, PANEL_DARK, cost_rect, border_radius=6)
         pygame.draw.rect(screen, PANEL_OUTLINE, cost_rect, width=1, border_radius=6)
@@ -700,7 +710,9 @@ def draw_battle(screen, game_state, item_sprites):
     draw_hud(screen, game_state)
     draw_log(screen, game_state)
     inv_rects = []
-    draw_inventory_bar(screen, game_state, item_sprites, inv_rects)
+    draw_inventory_bar(screen, game_state, item_sprites, inv_rects, armed_id=game_state["rps"].get("armed_soda"))
+    # Store for soda selection via click
+    game_state.setdefault("ui", {})["inv_rects_battle"] = inv_rects
     # ----- layout bounds for battle -----
     hud_bottom = (HUD_Y - 8) + ((HUD_LINE + 10) * 4 + 16)  # bottom of HUD panel
     content_top = max(220, hud_bottom + 16)
@@ -764,16 +776,24 @@ def draw_battle(screen, game_state, item_sprites):
         draw_text(screen, f"Round/Heat mult: x{si['round_mult']:.2f} / x{si['heat_mult']:.2f}", TINY_FONT, SUBTEXT, bx, breakdown_y + 18)
         draw_text(screen, f"+Mult: +{si['plus_mult']:.2f}   XMult: x{si['x_mult']:.2f}   Synergy: x{si['synergy_mult']:.2f}", TINY_FONT, SUBTEXT, bx, breakdown_y + 36)
         draw_text(screen, f"Total gained: {si['total']}", HUD_FONT, ACCENT, bx, breakdown_y + 56)
-    draw_controls(screen, "R/P/S to throw, Enter/Space to return after 3 rounds | ESC pause")
+        # Soda armed indicator (so players know A was pressed and which soda)
+        if game_state["rps"].get("armed_soda"):
+            draw_text(screen, f"Soda armed: {display_name(game_state['rps']['armed_soda'])}", TINY_FONT, ACCENT, bx, breakdown_y - 18)
+
+    draw_controls(screen, "R/P/S to throw, A arm soda, Enter/Space to return after 3 rounds | ESC pause")
 
 
 def draw_shop(screen, game_state, item_sprites, item_rects, hover_box):
     """Draw shop offers and status."""
     # Always reset confirm button rects each frame
     game_state["shop"]["confirm_rects"] = {}
+    # Reset live score on shop entry; keep score_display for HUD.
+    if not game_state["shop"].get("score_reset"):
+        game_state["player"]["score"] = 0
+        game_state["shop"]["score_reset"] = True
     draw_hud(screen, game_state)
     inv_rects = []
-    draw_inventory_bar(screen, game_state, item_sprites, inv_rects)
+    draw_inventory_bar(screen, game_state, item_sprites, inv_rects, armed_id=None)
     draw_log(screen, game_state)
     player = game_state["player"]
     shop = game_state["shop"]
@@ -785,7 +805,7 @@ def draw_shop(screen, game_state, item_sprites, item_rects, hover_box):
     safe_row_y = min(SHOP_ITEMS_Y, inv_top - max_card_height - 10)
     if shop["pending"]:
         item = ITEMS[shop["pending"]]
-        clean_name = "".join([c for c in item["name"] if not c.isdigit()]).strip()
+        clean_name = display_name(item)
         prompt = f"Buy {clean_name} for {item['cost']}g?"
         confirm = "(Y/Enter confirm, N cancel)"
         # Keep the prompts below the title and above the item row, within the left column.
@@ -1131,10 +1151,12 @@ def handle_battle_events(events, game_state):
             if event.key == pygame.K_ESCAPE:
                 game_state["prev_phase"] = "battle"
                 game_state["phase"] = "pause_menu"
-            # Arm a soda for the next hand; only applies if you have sodas.
+            # Arm a soda for the next hand; choose first soda if available.
             if event.key == pygame.K_a:
-                if game_state["player"]["sodas"]:
+                sodas = game_state["player"]["sodas"]
+                if sodas:
                     game_state["rps"]["soda_armed"] = True
+                    game_state["rps"]["armed_soda"] = sodas[0]
             move = None
             if event.key == pygame.K_r:
                 move = "rock"
@@ -1149,6 +1171,11 @@ def handle_battle_events(events, game_state):
             for move, rect in bs.get("buttons", []):
                 if rect.collidepoint((mx, my)):
                     resolve_battle_round(game_state, move)
+            # Allow selecting a specific soda by clicking its slot (if stored)
+            for rec in game_state["ui"].get("inv_rects_battle", []):
+                if rec["item_id"] and ITEMS[rec["item_id"]]["type"] == "soda" and rec["rect"].collidepoint((mx, my)):
+                    game_state["rps"]["soda_armed"] = True
+                    game_state["rps"]["armed_soda"] = rec["item_id"]
 
 
 def resolve_battle_round(game_state, player_move_val):
@@ -1163,6 +1190,11 @@ def resolve_battle_round(game_state, player_move_val):
     elif result == "tie":
         gold_gain = RPS_REWARD_TIE
     game_state["player"]["gold"] = max(0, game_state["player"]["gold"] + gold_gain)
+    # Track score feedback immediately on hand results (display only; set recalcs later).
+    if result == "win":
+        game_state["player"]["score"] += BASE_SCORE_WIN
+    elif result == "tie":
+        game_state["player"]["score"] += BASE_SCORE_TIE
 
     # If tie, log it but do NOT count it toward the 3-hand set; replay until win/lose.
     if result == "tie":
@@ -1198,12 +1230,13 @@ def resolve_battle_round(game_state, player_move_val):
         # --- Soda activation: only apply soda effects when armed, and consume one. ---
         original_sodas = list(game_state["player"]["sodas"])
         soda_used = None
-        if game_state["rps"].get("soda_armed") and original_sodas:
-            soda_used = original_sodas.pop(0)
-            game_state["player"]["sodas"] = [soda_used]
-        else:
-            game_state["player"]["sodas"] = []
+        armed_choice = rps_state.get("armed_soda")
+        if game_state["rps"].get("soda_armed") and armed_choice and armed_choice in original_sodas:
+            original_sodas.remove(armed_choice)
+            soda_used = armed_choice
+        game_state["player"]["sodas"] = original_sodas
         game_state["rps"]["soda_armed"] = False
+        game_state["rps"]["armed_soda"] = None
 
         score_info = calculate_set_score(set_summary, game_state)
         score_info["soda_used"] = soda_used
@@ -1216,14 +1249,9 @@ def resolve_battle_round(game_state, player_move_val):
             total_apply = int(total_apply * (ENDLESS_MULT_BASE ** total_sets))
         score_info["total"] = total_apply
         game_state["player"]["score"] += total_apply
-        # Store display score so HUD can show the last set gain even after reset.
-        game_state["score_display"] = total_apply
 
         # restore remaining sodas minus any consumed
-        if soda_used:
-            game_state["player"]["sodas"] = original_sodas
-        else:
-            game_state["player"]["sodas"] = original_sodas
+        game_state["player"]["sodas"] = original_sodas
         append_log(game_state, "-", "-", "set_total", 0, score_info)
         bs["last_set_score"] = score_info
         # Gate immediately after the set is scored (before shop)
@@ -1281,26 +1309,31 @@ def handle_shop_events(events, game_state, item_rects, hover_id_box):
                     item = ITEMS[shop["pending"]]
                     ok, reason = can_buy(player, item)
                     if ok:
-                        clean_name = "".join([c for c in item["name"] if not c.isdigit()]).strip()
                         apply_purchase(player, item)
-                        shop["message"] = f"Purchased {clean_name}."
+                        shop["message"] = f"Purchased {display_name(item)}."
                         shop["pending"] = None
                     else:
-                        # allow override: replace oldest of that type
-                        if item["type"] == "ring" and player["rings"]:
+                        # allow override ONLY when slots are full for that family
+                        can_replace = False
+                        if item["type"] == "ring" and len(player["rings"]) >= RING_MAX:
+                            can_replace = True
+                        if item["type"] == "stationary":
+                            counts = inventory_counts(player)
+                            fam = item["family"]
+                            if len(player["stationary"]) >= STATIONARY_MAX or (fam and counts.get(fam, 0) >= FAMILY_MAX):
+                                can_replace = True
+                        if can_replace and item["type"] == "ring" and player["rings"]:
                             old = player["rings"].pop(0)
                             if old in player["owned"]:
                                 player["owned"].remove(old)
-                            clean_name = "".join([c for c in item["name"] if not c.isdigit()]).strip()
-                            shop["message"] = f"Replaced {old} with {clean_name}."
+                            shop["message"] = f"Replaced {display_name(old)} with {display_name(item)}."
                             apply_purchase(player, item)
                             shop["pending"] = None
-                        elif item["type"] == "stationary" and player["stationary"]:
+                        elif can_replace and item["type"] == "stationary" and player["stationary"]:
                             old = player["stationary"].pop(0)
                             if old in player["owned"]:
                                 player["owned"].remove(old)
-                            clean_name = "".join([c for c in item["name"] if not c.isdigit()]).strip()
-                            shop["message"] = f"Replaced {old} with {clean_name}."
+                            shop["message"] = f"Replaced {display_name(old)} with {display_name(item)}."
                             apply_purchase(player, item)
                             shop["pending"] = None
                         else:
@@ -1314,6 +1347,8 @@ def handle_shop_events(events, game_state, item_rects, hover_id_box):
                     if game_state["heat"] >= 3:
                         game_state["heat"] = 0
                         game_state["round"] = min(game_state["round"] + 1, 7)
+                    # leaving shop: allow reset next time
+                    game_state["shop"]["score_reset"] = False
                     game_state["phase"] = "menu"
             if event.key == pygame.K_s and inv_hover:
                 itm = ITEMS[inv_hover]
