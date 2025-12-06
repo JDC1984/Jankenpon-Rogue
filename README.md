@@ -33,7 +33,7 @@ Repository: Public (`https://github.com/jadyn-dcruz/Jankenpon-Rogue`)
   - `rps.py` — moves, enemy choice, resolve round.
   - `scoring.py` — Balatro-inspired set scoring (base/add/x-mult, synergies, streaks, sodas).
 - Architecture diagram (Mermaid):
-  ```mermaid
+  ```
   flowchart TD
     A[Main Menu] --> B[Menu]
     A --> C[Settings/Help/Dev PIN]
@@ -121,7 +121,7 @@ Repository: Public (`https://github.com/jadyn-dcruz/Jankenpon-Rogue`)
 - AI usage: Base ideation (mechanics, theme, naming) and initial Python scaffolding are mine. I used ChatGPT for deeper PyGame specifics because I was new to it. Examples from this chat: building consistent buttons/panels/layout spacing; implementing the soda arming halo/indicator and A-key flow; positioning shop/battle elements to avoid overlap; Balatro-style scoring breakdown display. All AI-assisted code was reviewed and understood.
 - Repo: public at `https://github.com/jadyn-dcruz/Jankenpon-Rogue`.
 - People: Course staff/peers for feedback.
-## 7) 
+
 ### Fork-Clone Test Results
 
 #### 1. Repository Integrity 
