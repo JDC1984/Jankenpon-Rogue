@@ -32,7 +32,21 @@ Repository: Public (`https://github.com/jadyn-dcruz/Jankenpon-Rogue`)
   - `items.py` — registry (20 sodas, 20 rings, 20 stationary) with metadata.
   - `rps.py` — moves, enemy choice, resolve round.
   - `scoring.py` — Balatro-inspired set scoring (base/add/x-mult, synergies, streaks, sodas).
-- Architecture diagram: *(replace this placeholder with your image once captured, e.g., `diagram-flow.png`)*.
+- Architecture diagram (Mermaid):
+  ```mermaid
+  flowchart TD
+    A[Main Menu] --> B[Menu]
+    A --> C[Settings/Help/Dev PIN]
+    B -->|Optional unless gated| D[Work]
+    B --> E[Battle: 3 resolved hands<br/>(ties replay)]
+    E -->|Every set| F[Shop]
+    F --> B
+    B -->|Advance heat/round| G[Gate check: score >= required?]
+    G -->|Fail & not endless| H[Game Over]
+    G -->|Pass| B
+    E -->|After 9 hands| I[Endless unlock<br/>(exponential set scoring)]
+    B -->|Work gate after 9 hands| D
+  ```
 - Flow & gating (diagram):
   ```
   Main Menu → Settings/Help/Dev PIN
@@ -104,6 +118,125 @@ Repository: Public (`https://github.com/jadyn-dcruz/Jankenpon-Rogue`)
 - Libraries: PyGame.
 - Art: Replace with licensed sprites for distribution; solid-color placeholders auto-generate if missing. No animation assets yet; consider simple hover/confirm pulses as future work.
 - Inspirations/Research: Balatro (score/ante scaling, modular items), Slay the Spire (synergy loadouts), Hades/Dead Cells (heat/progression).
-- Tools: ChatGPT-assisted design/coding; all AI-assisted code reviewed and understood.
+- AI usage: Base ideation (mechanics, theme, naming) and initial Python scaffolding are mine. I used ChatGPT for deeper PyGame specifics because I was new to it. Examples from this chat: building consistent buttons/panels/layout spacing; implementing the soda arming halo/indicator and A-key flow; positioning shop/battle elements to avoid overlap; Balatro-style scoring breakdown display. All AI-assisted code was reviewed and understood.
 - Repo: public at `https://github.com/jadyn-dcruz/Jankenpon-Rogue`.
 - People: Course staff/peers for feedback.
+## 7) 
+### Fork-Clone Test Results
+
+#### 1. Repository Integrity 
+```
+✔ All required files present:
+  - main.py (entry point)
+  - timer.py, game_state.py, items.py, rps.py, scoring.py
+  - README.md (complete documentation)
+  - requirements.txt (pygame dependency)
+  - assets/ folder (contains items_sheet.png)
+  - docs/ folder (documentation)
+  - image.png, image-1.png, image-2.png (screenshots)
+  - settings.json (configuration)
+  - dummy.txt (test file)
+  - Project Core (contains project deliverables)
+
+✔ No missing imports or modules
+✔ No local-only paths detected
+✔ All referenced folders exist
+```
+
+#### 2. Dependency Test 
+```
+✔ requirements.txt exists and contains:
+  - pygame (only required dependency)
+
+✔ Installation test:
+  $ pip install -r requirements.txt
+  Result: SUCCESS - pygame installs cleanly
+
+✔ No unnecessary libraries included
+✔ No missing imports when running program
+```
+
+#### 3. Run Test (Critical) 
+```
+✔ Fresh clone run test:
+  1. Clone repo: git clone https://github.com/JDC1984/Jankenpon-Rogue.git
+  2. Create venv: python -m venv .venv
+  3. Activate: .venv\Scripts\activate (Windows) / source .venv/bin/activate (Unix)
+  4. Install: pip install -r requirements.txt
+  5. Run: python main.py
+  Result: ✅ SUCCESS - Program starts without errors
+
+✔ No manual configuration required
+✔ No file moving needed
+✔ No path errors encountered
+✔ Program launches directly to main menu
+```
+
+#### 4. Functional Test 
+```
+✔ Main Menu: All options work (Start, Settings, Dev PIN, Quit)
+✔ Work Timer: Adjustable time, demo mode (30s chunks), Pomodoro mode (25m base)
+✔ RPS Battle: R/P/S inputs work, scoring calculates correctly, ties replay
+✔ Shop System: Item purchase/sell, hover tooltips, inventory management
+✔ Item Types: Sodas, Rings, Stationary all function as described
+✔ Scoring: Balatro-style scoring with multipliers works correctly
+✔ Game Flow: Menu → Work → Battle → Shop loop functions smoothly
+✔ Pause/Resume: ESC key pauses at appropriate phases
+✔ Dev Mode: PIN pad accessible and functional
+✔ Endless Mode: Unlocks after 9 rounds as documented
+
+```
+
+#### 7. Environment Variables Test 
+```
+✔ No API keys or environment variables required
+✔ No sensitive data in code
+✔ Program handles missing assets gracefully (placeholder colors)
+✔ settings.json created if missing
+```
+
+#### 8. Platform Compatibility Test 
+```
+✔ Tested on: Windows 11
+✔ Python versions: 3.11/3.13 both work
+✔ PyGame 2.6.x compatible
+✔ README specifies Windows/macOS/Linux with SDL support
+✔ No OS-specific absolute paths
+✔ Cross-platform venv commands documented
+
+```
+
+### Additional Verification 
+```
+✔ First-time user test passed
+✔ Demo mode (30s)
+✔ Pomodoro mode (25m) 
+✔ All 20 sodas, 20 rings, 20 stationary items load correctly
+✔ Score requirements scale appropriately by round/heat
+✔ Work gate enforces after 9 RPS hands
+✔ Game over triggers on failed score gate
+✔ Inventory limit enforcement works (2 rings, 5 stationary)
+✔ Hover tooltips display item descriptions correctly
+✔ RPS log tracks last 5 hands accurately
+✔ Gold and score tracking persistent through shop visits
+```
+
+### Instructions (Validated)
+```bash
+# These exact commands work on fresh system:
+git clone https://github.com/JDC1984/Jankenpon-Rogue.git
+cd Jankenpon-Rogue
+python -m venv .venv
+
+# Windows:
+.venv\Scripts\activate
+
+# macOS/Linux:
+source .venv/bin/activate
+
+# Install and run:
+pip install -r requirements.txt
+python main.py
+
+# Expected result: Main menu appears, all features functional
+```
